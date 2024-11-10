@@ -1,0 +1,17 @@
+*__pycache__*
+*.ipynb_checkpoints/*
+*.nc
+*checkpoint*
+*.png
+*.out
+submit*/*
+*model.index
+*model.data*
+*.npz
+*.pbtxt
+hyperparameter/*
+results/*
+*.pkl
+*.npy
+tensorboard/*
+lightning_logs/*
