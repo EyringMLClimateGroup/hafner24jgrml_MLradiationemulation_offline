@@ -34,14 +34,16 @@ class Preprocessing(nn.Module):
         else:
             raise ValueError("mode must be vertical or horizontal")
         for v in self.in_vars[3:]:
-            if v in ["extra_2d_albedo", "cl", "extra_3d_in_cl", "extra_2d_in_albedo", "albvisdir", "albvisdif", "albnirdir", "albnirdif"]:
-                l = 1 if "2d" in v else self.var_len
+            if v in ["extra_2d_albedo", "extra_2d_in_albedo", "albvisdir", "albvisdif", "albnirdir", "albnirdif", "sftlf", "clt"]:
+                l = 1
+                d_norm = x[:, start :start +l]
+            elif v in ["cl", "extra_3d_in_cl" ]:
+                l = self.var_len
                 d_norm = x[:, start :start +l]
             elif v in ["toa", "toa_hr", "extra_2d_in_toa_flux"]:
-                l=1
+                l = 1
                 d_norm = x[:, start :start +l]/1360
             else:
-                #v = var_to_normvar[v]
                 mean = self.norm_file[v]["mean"]
                 std = self.norm_file[v]["std"]
                 l = len(mean) if mean.dim() > 0 else 1

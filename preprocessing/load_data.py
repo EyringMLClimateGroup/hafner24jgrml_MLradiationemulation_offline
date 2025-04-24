@@ -3,6 +3,111 @@ import numpy as np
 from datetime import datetime
 from pymeeus.Epoch import Epoch
 from pymeeus.Earth import Earth
+import xbatcher
+from torch.utils.data import Dataset as TorchDataset
+import torch
+
+class XBatcherPyTorchDataset(TorchDataset):
+    def __init__(self, ds_path, variables, height=47, batch_size=1, cache=None):
+        ds = xr.open_dataset(ds_path, engine="zarr", chunks={}).load()
+        self.bgen = xbatcher.BatchGenerator(ds,
+                              input_dims = {"height": height, "ncells": 1, "height_2":48}, 
+                              batch_dims = {"time":1,"ncells": batch_size},
+                              concat_input_dims=True, preload_batch=False
+                              )
+        self.batch_size=batch_size
+        self.x_vars = variables["in_vars"]
+        self.y_vars = variables["out_vars"] 
+        self.extra_vars = variables["extra_in"]
+        self.cache = cache if cache is not None else dict()
+        
+    def __len__(self):
+        return len(self.bgen)
+
+    def get_q(self, batch):
+        q = batch["extra_3d_clw"] + batch["extra_3d_cli"] + np.abs( batch["extra_3d_hus"] - np.mean(batch["extra_3d_hus"], axis=1))
+        qs = np.sum(q, axis=1)
+        normed_q = q/qs
+        return normed_q.squeeze()
+
+    def norm(self, batch, v):
+        if v in ["tend_ta_rlw", "tend_ta_rsw"]:
+            d = batch[v].squeeze().values
+            d = d*86400
+        elif v in ["rlu", "rld", "rlut", "rlus", "rlds", "rlds_rld"]:
+            sig = 5.670374419e-8
+            d = batch[v]
+            if v == "rlus":
+                d = batch["rlu"][:,:,-1]
+            # elif v in ["rlds", "rlds_rld"]:
+            #     d = batch["rld"][:,:,-1]
+            # elif v == "rlut":
+            #     d = batch["rlu"][:,:,0]
+            ta = batch["ts_rad"]
+            d = d/(ta**4*sig)
+            d = d.values
+        elif v in ["rsu", "rsd", "rsus", "rsut", "rsds", "rvds_dir", "rvds_dif", "rpds_dir", "rpds_dif", "rnds_dir", "rnds_dif"]:
+            d = batch[v].squeeze().values
+            rsdt = batch["rsd"][:,:,0].squeeze().values # toa
+            if v == "rsus":
+                d = np.where(rsdt>0,d/rsdt, 0) 
+            elif v == "rsut":
+                d = batch["rsu"][:,:,0].squeeze().values
+                d = np.where(rsdt>0, d/rsdt,0)
+            elif v == "rsds":
+                d = np.where(rsdt>0,d/rsdt, 0) 
+            elif v  in [ "rvds_dir", "rvds_dif", "rpds_dir", "rpds_dif", "rnds_dir", "rnds_dif"]:
+                d = np.where(batch["rsds"].squeeze()>0, d/rsdt, 0)
+        else:
+            d = batch[v].values
+        return d.squeeze()
+    
+    def preprocess_batch(self, batch):
+        
+        x = []
+        for xi in self.x_vars:
+            if len(batch[xi].shape)==3:
+                x.append(batch[xi].squeeze())
+            elif batch[xi].shape[0]==1:
+                x.append(batch[xi][0])
+            else:
+                x.append(batch[xi])
+        x = np.hstack(x)
+        
+        y = [] 
+        for yi in self.y_vars:
+            v = self.norm(batch, yi)
+            if len(v.shape)==1 and self.batch_size>1:
+                v = v[:,np.newaxis]
+            y.append(v)
+        y = np.hstack(y)
+
+        e = []
+        for ei in self.extra_vars:
+            if ei == "q":
+                e.append(self.get_q(batch))
+            else:
+                v = self.norm(batch, ei)
+                if len(v.shape)==1 and self.batch_size>1:
+                    v = v[:,np.newaxis]
+                e.append(v)
+        
+        if len(e) > 0 :
+            e = np.hstack(e)
+            self.extra_shape = e.shape[-1]
+            x = np.hstack([x,e])
+        else:
+            self.extra_shape = 0
+        return x, y
+
+    def __getitem__(self, idx):
+        if idx in self.cache.keys():
+            return self.cache[idx]
+        else:
+            batch = self.bgen[idx].load()    
+            x, y = self.preprocess_batch(batch)
+            self.cache[idx] = torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
+            return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
 
 
 class MyMultiFileGenerator():
@@ -122,7 +227,7 @@ class CoarseDataGenerator(MyMultiFileGenerator):
         __getitem__(idx):
             Retrieves the preprocessed data for a given index.
     """
-    def __init__(self, file_list, grid_file, bc_solar, vgrid, variables, var_to_norm, norm_dict, shuffle=False, x_norm=False, batch_size=None, x_stack="vertical", cell_filter=None, y_stack="vertical", **kwargs):
+    def __init__(self, file_list, grid_file, bc_solar, vgrid, variables, var_to_norm, norm_dict, shuffle=False, x_norm=False, batch_size=None, x_stack="vertical", cell_filter=None, y_stack="vertical",test=False, **kwargs):
         self.data = xr.open_mfdataset(file_list, decode_times=False)
         self.grid = xr.load_dataset(grid_file, decode_times=False)
         self.bc_solar = xr.load_dataset(bc_solar,  decode_times=False)
@@ -151,10 +256,10 @@ class CoarseDataGenerator(MyMultiFileGenerator):
                 l_temp=1
             l.append(l_temp)
         self.l = np.max(l)-1
+        self.test = test
         super().__init__(batch_size, times, cell_filter, norm_dict, shuffle, ncells) 
 
     def prepare(self, batch, varlist, stack, t=None, batch_idx=None):
-        out_arr = []
         for i, v in enumerate(varlist):
             if v=="toa":
                 d =  batch["rsd"][0].values[:,np.newaxis]
@@ -172,6 +277,42 @@ class CoarseDataGenerator(MyMultiFileGenerator):
             elif v=="dz":
                 d=self.vgrid["dzghalf"].isel({self.cell: batch_idx})
                 d = d.T
+            elif v in ["tend_ta_rlw", "tend_ta_rsw"]:
+                d = batch[v].squeeze().T.values
+                d = d*86400
+            elif v in ["rlu", "rld", "rlut", "rlus", "rlds", "rlds_rld"]:
+                sig = 5.670374419e-8
+                if v == "rlus":
+                    d = batch["rlu"][-1]
+                elif v in ["rlds", "rlds_rld"]:
+                    d = batch["rld"][-1]
+                elif v == "rlut":
+                    d = batch["rlu"][0]
+                ta = batch["ts_rad"]
+                d = d/(ta**4*sig)
+                if self.batch_size==1:
+                    d = d.values
+                else:
+                    d = d.values[:,np.newaxis]
+            elif v in ["rsu", "rsd", "rsus", "rsut", "rsds", "rvds_dir", "rvds_dif", "rpds_dir", "rpds_dif", "rnds_dir", "rnds_dif"]:
+                d = batch[v]
+                if v == "rsus":
+                    d_norm = np.where(batch["rsd"][0]>0,d/batch["rsd"][0].squeeze(), 0) 
+                elif v == "rsut":
+                    d = batch["rsu"][0]
+                    d_norm = np.where(batch["rsd"][0]>0, d/(batch["rsd"][0].squeeze()),0)
+                elif v == "rsds":
+                    d_norm = np.where(batch["rsd"][0]>0,d/batch["rsd"][0].squeeze(), 0) 
+                elif v  in [ "rvds_dir", "rvds_dif", "rpds_dir", "rpds_dif", "rnds_dir", "rnds_dif"]:
+                    d_norm = np.where(batch["rsds"]>0, d/ batch["rsd"][0].squeeze(), 0)
+                if self.batch_size==1:
+                    if isinstance(d_norm, np.ndarray) is False:
+                        d = d_norm.values
+                else:
+                    if isinstance(d_norm, np.ndarray) is False:
+                        d = d_norm.values[:,np.newaxis]
+                    else:
+                        d = d_norm[:,np.newaxis]
             else:
                 s = batch[v].squeeze().shape
                 if len(s)==2:
@@ -185,8 +326,10 @@ class CoarseDataGenerator(MyMultiFileGenerator):
                     d = d.squeeze()             
             if stack=="horizontal":
                 d = pad_arr(d, self.l)
-                
-            out_arr = self.__mystack__(out_arr, d, stack)
+            if i == 0:
+                out_arr = d
+            else:    
+               out_arr = self.__mystack__(out_arr, d, stack)
         return out_arr
 
     def get_q(self, batch):
@@ -236,19 +379,16 @@ class CoarseDataGenerator(MyMultiFileGenerator):
 
             extra = []
             for d in self.variables["extra_in"]:
-                if d in self.data.keys():
+                if "q" == d:
+                    q = self.get_q(batch)
+                    x = self.__mystack__(x, q, self.x_stack) if not self.test else x
+                    extra = self.__mystack__(extra, q, self.x_stack)
+                elif d in self.data.keys():
                     extra_d = self.prepare(batch, [d], self.x_stack, t=t)
-                    x = self.__mystack__(x, extra_d, self.x_stack)
-                    y = self.__mystack__(y, extra_d, self.y_stack)
+                    x = self.__mystack__(x, extra_d, self.x_stack) if not self.test else x
                     extra = self.__mystack__(extra, extra_d, self.x_stack)
                 else:
-                    continue
-
-            if "q" in self.variables["extra_in"]:
-                q = self.get_q(batch)
-                x = self.__mystack__(x, q, self.x_stack)
-                y = self.__mystack__(y, q, self.y_stack)
-                extra = self.__mystack__(extra, q, self.x_stack)
+                    continue            
             
             if len(self.variables["extra_in"])>0:
                 if self.batch_size==1:

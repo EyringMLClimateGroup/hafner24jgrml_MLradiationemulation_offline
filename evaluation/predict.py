@@ -31,12 +31,8 @@ def denorm(var, varname, nf="", norm_type="minmax", batch=""):
         mean_val = nf[varname]["mean"]
         denorm = np.where(diff>0, var*diff+mean_val, mean_val)
     elif norm_type=="SW":
-        if varname in ["rpds_dir", "rpds_dif", "rvds_dir", "rvds_dif", "rnds_dir", "rnds_dif"]:
-            sw_norm = batch["rsd"][0].values
-            denorm = var*sw_norm
-        else: 
-            sw_norm = batch["rsd"][0].values
-            denorm = var*sw_norm            
+        sw_norm = batch["rsd"][0].values
+        denorm = var*sw_norm            
     elif norm_type=="LW":
         sig = 5.670374419e-8
         ta = batch["ts_rad"].values
@@ -130,7 +126,6 @@ def predict(model, data_gen, nf, variables, model_type, mode="vertical"):
             return_dict[v] = temp_var
         else:
             return_dict[v] = temp_var.T
-    from IPython import embed; embed()
     pred = model.predict(torch.from_numpy(x)).detach().numpy()
 
     if "SW" in model_type:
@@ -145,7 +140,18 @@ def predict(model, data_gen, nf, variables, model_type, mode="vertical"):
         ds="rlds" # downward flux surface
         ut="rlut" # upward flux toa
         nt="LW"   # norm type for denorming fluxes
-    if "HR" in model_type:
+    if "FLUX_HR" in model_type:
+        return_dict[f"true_{hr}"] = data_gen.data[hr].isel({"time": t,cell_name: batch_idx}).T
+        return_dict[f"pred_{hr}"] = pred[:,:47]
+        return_dict[f"true_{ds}"] = get_special_var(ds, data_gen, t, batch_idx, cell_name)
+        return_dict[f"true_{ut}"] = get_special_var(ut, data_gen, t, batch_idx, cell_name)
+        return_dict[f"pred_{ds}"] = denorm(pred[:,47], ds, norm_type=nt, batch=data_gen.data.isel({"time": t,cell_name: batch_idx}))        
+        return_dict[f"pred_{ut}"] = denorm(pred[:,47+1], ut, norm_type=nt, batch=data_gen.data.isel({"time": t,cell_name: batch_idx}))
+        if "SW" in model_type:
+            for idx, v in enumerate(variables["out_vars"][3:]):
+                return_dict[f"true_{v}"] = data_gen.data[v].isel({"time": t,cell_name: batch_idx}).values.squeeze()
+                return_dict[f"pred_{v}"] = denorm(pred[:,47+idx+2], v, norm_type="SW", batch=data_gen.data.isel({"time": t,cell_name: batch_idx}))
+    elif "HR" in model_type:
         return_dict[f"true_{hr}"] = data_gen.data[hr].isel({"time": t,cell_name: batch_idx}).T
         if mode == "vertical":
             return_dict[f"pred_{hr}"] = pred[:,:47]
@@ -159,8 +165,7 @@ def predict(model, data_gen, nf, variables, model_type, mode="vertical"):
         if "SW" in model_type:
             for idx, v in enumerate(variables["out_vars"][2:]):
                 return_dict[f"true_{v}"] = data_gen.data[v].isel({"time": t,cell_name: batch_idx}).values.squeeze()
-                return_dict[f"pred_{v}"] = denorm(pred[:,idx+2], v, norm_type="SW", batch=data_gen.data.isel({"time": t,cell_name: batch_idx}))
-            
+                return_dict[f"pred_{v}"] = denorm(pred[:,idx+2], v, norm_type="SW", batch=data_gen.data.isel({"time": t,cell_name: batch_idx}))       
 
     for i in tqdm(range(1, data_gen.__len__())):
         x, y = data_gen.__getitem__(i)
@@ -184,7 +189,18 @@ def predict(model, data_gen, nf, variables, model_type, mode="vertical"):
             else:
                 return_dict[v] = np.vstack((return_dict[v], temp_var.T))
 
-        if "HR" in model_type:
+        if "FLUX_HR" in model_type:
+            return_dict[f"true_{hr}"] = np.vstack((return_dict[f"true_{hr}"], data_gen.data[hr].isel({"time": t,cell_name: batch_idx}).T))
+            return_dict[f"pred_{hr}"] = np.vstack((return_dict[f"pred_{hr}"], y_pred[:,:47]))
+            return_dict[f"true_{ds}"] = np.hstack((return_dict[f"true_{ds}"], get_special_var(ds, data_gen, t, batch_idx, cell_name)))
+            return_dict[f"true_{ut}"] = np.hstack((return_dict[f"true_{ut}"], get_special_var(ut, data_gen, t, batch_idx, cell_name)))
+            return_dict[f"pred_{ds}"] = np.hstack((return_dict[f"pred_{ds}"], denorm(y_pred[:,47], ds, norm_type=nt, batch=data_gen.data.isel({"time": t,cell_name: batch_idx})) ))        
+            return_dict[f"pred_{ut}"] = np.hstack((return_dict[f"pred_{ut}"], denorm(y_pred[:,47+1], ut, norm_type=nt, batch=data_gen.data.isel({"time": t,cell_name: batch_idx})) ))
+            if "SW" in model_type:
+                for idx, v in enumerate(variables["out_vars"][3:]):
+                    return_dict[f"true_{v}"] = np.hstack((return_dict[f"true_{v}"], data_gen.data[v].isel({"time": t,cell_name: batch_idx}).values.squeeze()))
+                    return_dict[f"pred_{v}"] = np.hstack((return_dict[f"pred_{v}"], denorm(y_pred[:,47+idx+2], v, norm_type="SW", batch=data_gen.data.isel({"time": t,cell_name: batch_idx}))))
+        elif "HR" in model_type:
             return_dict[f"true_{hr}"] = np.vstack((return_dict[f"true_{hr}"], data_gen.data[hr].isel({"time": t,cell_name: batch_idx}).T))
             if mode == "vertical":
                 return_dict[f"pred_{hr}"] = np.vstack((return_dict[f"pred_{hr}"], y_pred[:,:47]))
@@ -272,7 +288,9 @@ def summary_statistics(result_dict, grid, model_type, varlist, verbose=False):
         "clon": clon}
 
     for v in varlist:
-        if "HR" in model_type:
+        if v == "rlds_rld":
+            v = "rlds"
+        if "tend" in v:
             summary_dict[f"mae_{v}"] = np.zeros((n, 47))
             summary_dict[f"bias_{v}"] = np.zeros((n, 47))
             summary_dict[f"r2_{v}"] = np.zeros((n, 47))
@@ -291,6 +309,8 @@ def summary_statistics(result_dict, grid, model_type, varlist, verbose=False):
         idx = np.argwhere(result_dict["idx"]==i).squeeze()
         
         for v in varlist:
+            if v == "rlds_rld":
+                v = "rlds"
             if idx.size == 0:
                 if verbose:
                     print("Failed to produce summary for index ", i)

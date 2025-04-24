@@ -1,0 +1,84 @@
+model_type: "SW_FLUX_HR"              # Choices: ["SW_HR", "LW_HR", "SW_FLUX", "LW_FLUX"]
+baseline: "SW_HR"
+baseline_path: "results/energy_mse_mae_96_new/baseline_SW_HR/model.pth"
+n_flux_vars: 8
+learning_rate: 1.0e-3
+folder: "energy_flux_adamw_lr13"             # Folder to save the model
+dev: False                  # Use development mode, loads less data
+checkpoint: False          # Load checkpoint
+weight_decay: 1.e-4
+hidden_size: 96
+batch_size: 256
+seed: 3141
+nn: "default"
+nn_flux: "default"          # Choices: ["simple", "default"]
+x_mode: "vertical"       # Choices: ["vertical", "horizontal"]
+y_mode: "vertical"         # Choices: ["vertical", "horizontal"]
+pretrained: False          # Load pretrained model
+start_epoch: 0             # Start training from checkpoint
+train_epochs: -1            # Train for E epochs use 0 for maximum + early stopping
+eval_on: "test"            # Choices: ["train", "validation", "test"]
+exp_name: "exp"
+base: "path/to/data/"  # Base path to data
+data: "data/"
+train_path: "data/train_SW.zarr"
+val_path: "data/val_SW.zarr"
+test_path: "data/test_SW.zarr"
+norm_file_path: "preprocessing/norm_file_extra.pkl"
+vgrid_path: "path/to/vgrid.nc"
+# Placeholder, will be set dynamically in Python
+save_folder: ""
+result_folder: ""
+model_path: ""
+grid: ""
+vgrid: ""
+pretrained_path: ""
+checkpoint_path: ""
+device: ""
+num_gpus: 0
+norm_file: ""
+result_file: ""
+x_shape: 0
+y_shape: 0
+extra_shape: 0
+coarse_train: ""
+coarse_val: ""
+coarse_test: ""
+train_steps: 0
+validation_steps: 0
+
+variables:
+  in_vars: 
+    - "extra_3d_cli"      # Cloud ice content
+    - "extra_3d_clw"      # Cloud liquid water content
+    - "extra_3d_hus"      # Specific humidity
+    - "toa"               # Top of atmosphere
+    - "extra_2d_albedo"   # Surface albedo
+    - "o3"                # Ozone concentration
+    - "cl"                # Cloud fraction
+    - "rho"               # Air density
+    - "extra_3d_ta"       # Air temperature
+    - "albvisdir"           # Visible direct albedo
+    - "albvisdif"           # Visible diffuse albedo
+    - "albnirdir"           # Near-infrared direct albedo
+    - "albnirdif"           # Near-infrared diffuse albedo
+  out_vars: 
+    - "tend_ta_rsw"         # Tendency of air temperature due to shortwave radiation
+    - "rsds"                # Surface downwelling shortwave radiation
+    - "rsut"                # Top of atmosphere upwelling shortwave radiation
+    - "rpds_dir"            # Direct shortwave radiation at surface
+    - "rpds_dif"            # Diffuse shortwave radiation at surface
+    - "rvds_dir"            # Direct visible radiation at surface
+    - "rvds_dif"            # Diffuse visible radiation at surface
+    - "rnds_dir"            # Direct near-infrared radiation at surface
+    - "rnds_dif"            # Diffuse near-infrared radiation at surface
+  extra_in: 
+    - "qconv"               # conversion factor for HR->Flux
+  diagnostics: 
+    - extra_2d_prw        # Precipitable water
+    - extra_2d_clivi      # Vertically integrated cloud ice
+    - extra_2d_cllvi      # Vertically integrated cloud liquid
+    - rsus                # Surface upwelling shortwave radiation
+    - clt                 # Total cloud fraction
+    - extra_3d_pfull      # Full pressure levels
+    - qconv               # conversion factor for HR->Flux

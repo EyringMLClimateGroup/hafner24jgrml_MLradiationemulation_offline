@@ -15,3 +15,4 @@ results/*
 *.npy
 tensorboard/*
 lightning_logs/*
+trained_nns/*

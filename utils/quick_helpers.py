@@ -3,8 +3,10 @@ import argparse
 from glob import glob
 import numpy as np
 from models.flux import Flux
-from models.bilstm import BiLSTM
-
+from models.bilstm import BiLSTM, BiLSTM_with_Flux
+from models.simple_nn import SimpleNN, SimpleNN_with_Flux
+import torch
+import yaml
 
 def var_list(ds):
     """
@@ -70,30 +72,89 @@ def cell_filter_from_data(path, model_type, step = 1, filter=True):
     if step > 1:   
         cells = [cells[i][start[i]::step] for i in range(0,n)] # reduction filter
     print([len(c) for c in cells])
-    return cells
+    return cells     
 
 def load_from_checkpoint(args, extra_shape):
     print("loading checkpoint")
     ckpt = glob(args.checkpoint_path+"*.ckpt")
     if len(ckpt) > 0:
         ckpt.sort() 
-    print("Checkpoint: ", ckpt[-1])
+    else:
+        raise ValueError("No checkpoint found")
+    print("Use checkpoint: ", ckpt[-1])
+    #from IPython import embed; embed()
 
-    if "FLUX" in args.model_type:
+    if "FLUX_HR" in args.model_type:
+        if "SW" in args.model_type:
+            print("SW")
+            in_vars = args.variables["in_vars"][:9]
+            e=4
+        elif "LW" in args.model_type:
+            print("LW")
+            in_vars = args.variables["in_vars"]
+            e=0
+        else:
+            raise ValueError(f"Unknown model type {args._model_type}")
+        if args.nn == "default":
+            hr_model = BiLSTM(args.model_type, 
+                          output_features=1, 
+                          extra_shape=0, 
+                          norm_file=args.norm_file, 
+                          hidden_size=args.hidden_size,
+                          in_vars=in_vars)
+        elif args.nn == "simple":
+            hr_model = SimpleNN(args.model_type, 
+                          input_features = args.x_shape-extra_shape-e, 
+                          output_features = args.y_shape - args.n_flux_vars,
+                          extra_shape=0, 
+                          norm_file=args.norm_file, 
+                          hidden_size=args.hidden_size,
+                          in_vars=in_vars)
+        else:
+            raise ValueError(f"Unknown nn type {args.nn}")
+        if args.nn_flux == "default":
+            baseline_model = BiLSTM_with_Flux.load_from_checkpoint(ckpt[-1],
+                            hr_model=hr_model, 
+                            model_type=args.model_type, 
+                            output_features=args.n_flux_vars, 
+                            extra_shape=extra_shape, 
+                            lr=args.learning_rate,                           
+                            weight_decay=args.weight_decay)
+        elif args.nn_flux == "simple":
+            baseline_model = SimpleNN_with_Flux.load_from_checkpoint(ckpt[-1],
+                            hr_model=hr_model,
+                            model_type=args.model_type, 
+                            output_features = args.n_flux_vars,
+                            extra_shape=0, 
+                            hidden_size=args.hidden_size,
+                            norm_file=args.norm_file
+                            )                                                
+    elif "FLUX" in args.model_type:
         baseline_model = Flux.load_from_checkpoint(ckpt[-1], 
-                                                            model_type=args.model_type, 
-                                                            in_nodes=args.x_shape-args.extra_shape, 
-                                                            n_out_nodes=args.y_shape-args.extra_shape,
-                                                            extra_shape=extra_shape,
-                                                            nft=args.nft, 
-                                                            in_vars=args.variables["in_vars"])
+                                                    model_type=args.model_type, 
+                                                    in_nodes=args.x_shape-args.extra_shape, 
+                                                    n_out_nodes=args.y_shape-args.extra_shape,
+                                                    extra_shape=extra_shape,
+                                                    norm_file=args.norm_file, 
+                                                    in_vars=args.variables["in_vars"])
     elif "HR" in args.model_type:
-        baseline_model = BiLSTM.load_from_checkpoint(ckpt[-1],
-                                                            model_type=args.model_type,
-                                                            output_features=args.y_shape - 1,
-                                                            extra_shape=extra_shape,
-                                                            nft=args.nft, 
-                                                            in_vars=args.variables["in_vars"])
+        if args.nn == "default":
+            baseline_model = BiLSTM.load_from_checkpoint(ckpt[-1],
+                                                    model_type=args.model_type,
+                                                    output_features=1,
+                                                    extra_shape=extra_shape,
+                                                    hidden_size=args.hidden_size,
+                                                    norm_file=args.norm_file, 
+                                                    in_vars=args.variables["in_vars"])
+        elif args.nn == "simple":
+            baseline_model = SimpleNN.load_from_checkpoint(ckpt[-1],
+                                                    model_type=args.model_type,
+                                                    input_features = args.x_shape-extra_shape, 
+                                                    output_features = args.y_shape,
+                                                    extra_shape=extra_shape,
+                                                    norm_file=args.norm_file, 
+                                                    hidden_size=args.hidden_size,
+                                                    in_vars=args.variables["in_vars"])
     return baseline_model   
 
 

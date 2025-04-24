@@ -13,8 +13,13 @@ start_epoch: 0             # Start training from checkpoint
 train_epochs: 0            # Train for E epochs use 0 for maximum + early stopping
 eval_on: "test"            # Choices: ["train", "validation", "test"]
 exp_name: "exp"
-base: "/path/to/data/"
+base: "path/to/data/"  # Base path to data
+data: "data/"
+train_path: "data/train_SW.zarr"
+val_path: "data/val_SW.zarr"
+test_path: "data/test_SW.zarr"
 norm_file_path: "preprocessing/norm_file_extra.pkl"
+vgrid_path: "path/to/vgrid.nc"
 # Placeholder, will be set dynamically in Python
 save_folder: ""
 result_folder: ""

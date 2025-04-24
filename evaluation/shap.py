@@ -13,9 +13,13 @@ def calculate_mean_shapley(baseline_model, args):
     X = torch.cat(X)
 
     attr_list = []
-    if "HR" in args.model_type:    
+    if "FLUX_HR" in args.model_type:
+        for i in tqdm(range(47+args.n_flux_vars)):
+            attributions, delta = gs.attribute(X[::100], X, target=(i), return_convergence_delta=True)
+            attr_list.append(attributions.detach().numpy())
+    elif "HR" in args.model_type:    
         for i in tqdm(range(47)):
-            attributions, delta = gs.attribute(X[::100], X, target=(i,0), return_convergence_delta=True)
+            attributions, delta = gs.attribute(X[::100], X, target=(i), return_convergence_delta=True)
             attr_list.append(attributions.detach().numpy())
     else:
         for i in tqdm(range(len(args.variables["out_vars"]))):
@@ -23,7 +27,9 @@ def calculate_mean_shapley(baseline_model, args):
             attr_list.append(attributions.detach().numpy())
     attrs = np.array(attr_list)
 
-    if "HR" in args.model_type:
+    if "FLUX_HR" in args.model_type:
+        vals = np.mean(np.abs(attrs.T[:,:]), axis=1)
+    elif "HR" in args.model_type:
         vals = np.mean(np.abs((attrs.T[:-47,:])), axis=1)
     elif args.model_type=="SW_FLUX":
         vals = np.mean(np.abs(attrs.T[:-2,:]), axis=1)

@@ -12,10 +12,10 @@ from plotter.map_plots import plot_map_lat_profile
 from evaluation.predict import *
 from evaluation.shap import *
 import config
-
+from utils.quick_helpers import load_from_checkpoint
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning) 
-
+model = None
 args = config.setup_args_and_load_data(train=False)
 
 if "SW" in args.model_type:
@@ -38,16 +38,16 @@ if os.path.exists(args.result_file):
         results = pickle.load(handle)
     print("Done!")
 else:
-    print("Predicting...")    
-    baseline_model = config.create_model(args.x_shape, args.y_shape, args.model_type, nft=args.norm_file, in_vars=args.variables["in_vars"], extra_shape=args.extra_shape, seed=args.seed)
+    print("Predicting...") 
+    model = config.create_model(args, extra_shape=0)
     print(args.save_folder+"baseline_"+ args.model_type +"/model")
     
     try:
-        baseline_model.load_state_dict(torch.load(args.model_path))
+        model.load_state_dict(torch.load(args.model_path))
     except:
-        baseline_model = config.load_from_checkpoint(args, args.extra_shape)
+        model = load_from_checkpoint(args, args.extra_shape)
 
-    results = predict(baseline_model.to("cpu"), args.coarse_test, args.norm_file, args.variables, args.model_type, args.y_mode)
+    results = predict(model.to("cpu"), args.coarse_test, args.norm_file, args.variables, args.model_type, args.y_mode)
     if "HR" in args.model_type:
         results[f"true_{hr}"] = results[f"true_{hr}"]*86400
     with open(args.result_file, 'wb') as handle:
@@ -81,7 +81,7 @@ if "FLUX" in args.model_type:
             
     print("First eval plots done!")
 
-elif "HR" in args.model_type:
+if "HR" in args.model_type:
     
     clear_idx = results["clt"]==0
     cloudy_idx = results["clt"]==1
@@ -90,7 +90,7 @@ elif "HR" in args.model_type:
         if "SW" in args.model_type:
             xlim=(-.1,.5)
         elif "LW" in args.model_type:
-            xlim=(-.2,1.2)
+            xlim=(-.2,1.)
         for scale in ["linear","log"]:
             plot_statistics_profile(ta_hr, mean_pres, "mae", "MAE Heating Rate [K/d]", scale, xlim=xlim, fname=args.result_folder+hr_id+"_heating_rate_mae_r2_"+scale)
             plot_statistics_profile(ta_hr, mean_pres, "rel_mae_true", "Relative MAE Heating Rate", scale, fname=args.result_folder+hr_id+"_heating_rate_relative_mae_r2_"+scale)
@@ -222,7 +222,7 @@ if "FLUX" in args.model_type:
                                 norm=Normalize(0, vmax=1, clip=True), extend="min",
                                 fname=f"{args.result_folder}{v}")
 
-if args.model_type == "LW_FLUX":
+if  "LW_FLUX" in args.model_type:
     vnames = [v for v in summary.keys() if "mae" in v]
     for v in vnames:
         if len(summary[v][0])>1:
@@ -250,7 +250,7 @@ if args.model_type == "LW_FLUX":
                                 f"{v} mean: {m:.2f}", label="Bias [$W/m^2$]",cmap="seismic", 
                                 norm=Normalize(-5, vmax=5, clip=True), extend="both",
                                 fname=f"{args.result_folder}{v}")
-elif args.model_type == "SW_FLUX":
+elif "SW_FLUX" in args.model_type:
     vnames = [v for v in summary.keys() if "mae" in v]
     for v in vnames:
         if len(summary[v][0])>1:
@@ -280,51 +280,52 @@ elif args.model_type == "SW_FLUX":
                                 fname=f"{args.result_folder}{v}")
 
 print("Map plots done!")
-print("Starting SHAP analysis...")
-baseline_model = config.create_model(args.x_shape, args.y_shape, args.model_type, nft=args.norm_file, in_vars=args.variables["in_vars"], extra_shape=args.extra_shape, seed=args.seed)
-baseline_model.load_state_dict(torch.load(args.model_path))
 
-model_specs = {
-    "LW_FLUX": {
-        "mtype": "LW_FLUX",
-        "folder": "fluxes_new",
-        "ymode": "vertical",
-        "yxshift": -10,
-        "yyshift": 0.8,
-        "yshift": 0.25,
-        "yrotate": 90,
-        "vmin": 0.005,
-    },
-    "SW_FLUX": {
-        "mtype": "SW_FLUX",
-        "folder": "fluxes_mbe",
-        "ymode": "vertical",
-        "yxshift": -40,
-        "yyshift": 0.5,
-        "yshift": 2.5,
-        "yrotate": 0,
-        "vmin": 0.01,
-    },
-    "LW_HR": {
-        "mtype": "LW_HR",
-        "folder": "preprocessing_toa",
-        "ymode": "horizontal",
-        "yxshift": -15,
-        "yyshift": 20,
-        "yshift": 13,
-        "yrotate": 90,
-        "vmin": 0.5,
-    },
-    "SW_HR": {
-        "mtype": "SW_HR",
-        "folder": "preprocessing_toa",
-        "ymode": "horizontal",
-        "yxshift": -15,
-        "yyshift": 20,
-        "yshift": 13,
-        "yrotate": 90,
-        "vmin": 0.3,
-    },
-}
-shapley_mean_vals = calculate_mean_shapley(baseline_model, args)
-plot_interpret_values(shapley_mean_vals, height, args.variables, args.norm_file, model_specs[args.model_type])
+print("Calculating energy consistency...")
+if "SW" in args.model_type:
+    dt = results["toa"]
+    net_surf = results[f"pred_{ds}"]*(1-results["extra_2d_albedo"])
+else:
+    dt = 0
+    sig= 5.670374419e-8
+    net_surf = results[f"pred_{ds}"] - 0.996*results["ts_rad"]**4*sig
+
+net_toa = dt - results[f"pred_{ut}"] 
+fnet_flux = net_toa - net_surf
+fnet_hr = results[f"pred_{hr}"]/86400/results["qconv"]
+diff = fnet_flux - np.sum(fnet_hr, axis=-1)
+
+p025 = np.percentile(diff, 1)
+p975 = np.percentile(diff, 99)
+m = np.mean(diff)
+am = np.mean(np.abs(diff))
+s = np.std(diff)
+xlim = np.max(np.abs([p025,p975]))
+print(m, am, s, p025, p975)
+text = f" $\\mu$  =   {m:.2f} $W/m^2$ \n$|\mu|$ = {am:.2f} $W/m^2$ \n $\sigma$  = {s:.2f} $W/m^2$"
+print(text)
+
+plt.figure()
+plt.title(f"Energy Consistency - {model_name}")
+import matplotlib as mpl
+mpl.rcParams['font.size'] = '15'
+plt.hist(diff, bins=100, density=True, range=(-xlim, xlim))
+plt.ylabel("Density")
+plt.xlabel("Difference [$W/m^2$]")
+plt.text(10,0.015,text, backgroundcolor="w")
+plt.tight_layout()
+plt.savefig(args.result_folder+"energy_consistency.png")
+plt.close()
+
+
+print("Starting SHAP analysis...")
+if os.path.exists(args.result_folder+"shapley_mean_vals.npy"):
+    print("Loading SHAP values...")
+    shapley_mean_vals = np.load(args.result_folder+"shapley_mean_vals.npy")
+else:
+    print("Calculating SHAP values...")
+    model = config.create_model(args, shap =True)
+    model.load_state_dict(torch.load(args.model_path))
+    shapley_mean_vals = calculate_mean_shapley(model, args)
+    np.save(args.result_folder+"shapley_mean_vals.npy", shapley_mean_vals)
+plot_interpret_values(shapley_mean_vals, height, args.variables, args.norm_file, args.model_type)

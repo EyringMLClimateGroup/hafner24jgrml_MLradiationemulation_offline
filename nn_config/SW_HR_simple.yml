@@ -1,25 +1,27 @@
 model_type: "SW_HR"              # Choices: ["SW_HR", "LW_HR", "SW_FLUX", "LW_FLUX"]
 learning_rate: 5.0e-3
-folder: "energy_mse_mae_96_new"         # Folder to save the model
+folder: "simple_hr_energy"         # Folder to save the model
 dev: False                  # Use development mode, loads less data
 checkpoint: False          # Load checkpoint
-weight_decay: 0
-hidden_size: 96
+weight_decay: 0           #1.0e-4
+hidden_size: 150
 batch_size: 256
 seed: 3141
-nn: "default"
+nn: "simple"
 x_mode: "vertical"       # Choices: ["vertical", "horizontal"]
 y_mode: "vertical"       # Choices: ["vertical", "horizontal"]
 pretrained: False          # Load pretrained model
 start_epoch: 0             # Start training from checkpoint
 train_epochs: -1            # Train for E epochs use 0 for maximum + early stopping
 eval_on: "test"            # Choices: ["train", "validation", "test"]
+#exp_name: "icon-2.6.4_atm_amip-rad_R2B5_r1v1i1p2l1f1"
+#base: "/work/bd1179/experiments/"
 exp_name: "exp"
 base: "path/to/data/"  # Base path to data
 data: "data/"
-train_path: "data/train_LW.zarr"
-val_path: "data/val_LW.zarr"
-test_path: "data/test_LW.zarr"
+train_path: "data/train_SW.zarr"
+val_path: "data/val_SW.zarr"
+test_path: "data/test_SW.zarr"
 norm_file_path: "preprocessing/norm_file_extra.pkl"
 vgrid_path: "path/to/vgrid.nc"
 # Placeholder, will be set dynamically in Python

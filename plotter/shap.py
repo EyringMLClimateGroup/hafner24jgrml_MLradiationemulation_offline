@@ -35,57 +35,213 @@ def get_start_end_in_list(var_list, norm_file, height):
         end.append(start[-1]+l)
     return np.array(start), np.array(end), np.array(ticks), labels  
 
-def plot_interpret_values(vals, height, variables, norm_file, kwargs):
-    x, y = np.mgrid[0:len(vals):1,0:len(vals[0]):1]
-    
-    
+model_specs = {
+    "LW_FLUX": {
+        "mtype": "LW_FLUX",
+        #"folder": "fluxes_new",
+        #"ymode": "vertical",
+        "yxshift": -10,
+        "yyshift": 0.8,
+        "yshift": 0.25,
+        "yrotate": 90,
+        "vmin": 0.001,
+    },
+    "SW_FLUX": {
+        "mtype": "SW_FLUX",
+        #"folder": "fluxes_mbe",
+        #"ymode": "vertical",
+        "yxshift": -40,
+        "yyshift": 0.5,
+        "yshift": 2.5,
+        "yrotate": 0,
+        "vmin": 0.01,
+    },
+    "LW_HR": {
+        "mtype": "LW_HR",
+        #"folder": "preprocessing_toa",
+        #"ymode": "horizontal",
+        "yxshift": -15,
+        "yyshift": 20,
+        "yshift": 13,
+        "yrotate": 90,
+        "vmin": 0.5,
+    },
+    "SW_HR": {
+        "mtype": "SW_HR",
+        #"folder": "preprocessing_toa",
+        #"ymode": "horizontal",
+        "yxshift": -15,
+        "yyshift": 20,
+        "yshift": 13,
+        "yrotate": 90,
+        "vmin": 0.3,
+    },
+    "SW_FLUX_HR": {
+        "xx_yy": {
+            "figsize": (42, 7),
+            "xshift":-15,
+            "yshift": -15,
+            "vmax": 1,
+            "vmin":0.3,
+        },
+        "xx_y": {
+            "figsize": (42,7),
+            "yshift": -2,
+            "vmax": 1e-1,
+            "vmin":5e-2,
+        },
+        "x_yy": {
+            "figsize": (9,7),
+            "xshift": -2,
+            "vmax": 1,
+            "vmin": 5e-1,
+        },
+        "x_y": {
+            "figsize": (5,5),
+            "vmax": 5e-2,
+            "vmin": 5e-3,
+        },
+    },
+    "LW_FLUX_HR": {
+        "xx_yy": {
+            "figsize": (42, 7),
+            "xshift":-15,
+            "yshift": -15,
+            "vmax": 1e-13,#1.5,
+            "vmin": 1e-20, #0.5,
+        },
+        "xx_y": {
+            "figsize": (42,5),
+            "yshift": -1,
+            "vmax": 1e-13,#1e-1,
+            "vmin": 1e-20,#1e-2,
+        },
+        "x_yy": {
+            "figsize": (2.5,5),
+            "xshift": -1,
+            "vmax": 1e-13,#2,
+            "vmin": 1e-20,#5e-1,
+        },
+        "x_y": {
+            "figsize": (2.5,5),
+            "vmax": 1e-13,#3,
+            "vmin": 1e-20,#5e-1,
+        },
+    }
+}
+def plot_interpret_values(vals, height, variables, norm_file, model_type, **kwargs):
+    fig_specs = model_specs[model_type]
     mpl.rcParams['font.size'] = '36'
-    
-    print(np.argmin(np.abs(height-50)))
+    h = len(height)
+    i_1 = np.argmin(np.abs(height[::-1]-1))
+    i_10 = np.argmin(np.abs(height[::-1]-10))
+    i_50 = np.argmin(np.abs(height[::-1]-50))
 
-    plt.figure(figsize=(42,5))
-    start_x, end_x, xticks, xlabels = get_start_end_in_list(variables["in_vars"], norm_file, height)
-    print(xticks, xlabels)
-    start_y, end_y, yticks, ylabels = get_start_end_in_list(variables["out_vars"],  norm_file, height)
-    plt.vlines(end_x-0.5, -1, np.max(y)+1, color="black", linewidths=1)
-    plt.hlines(end_y[:-1]-0.5, -1, np.max(x)+1, color="black", linewidths=1)
-    plt.xlim(-0.50, end_x[-1]-0.5)
-    plt.ylim(-0.5, np.max(y)+0.5)
-    xcenters = (start_x+end_x)/2
-    ycenters = (start_y+end_y)/2
-    
-    plt.pcolor(x,y,np.flip(vals),  cmap="Reds", norm=mpl.colors.SymLogNorm(linthresh=kwargs["vmin"], linscale=1.,vmin=0, base=10))
- 
-    prev_2d = 0
-    for i, x in enumerate(xcenters):
-        s = label_translate(variables["in_vars"][-i-1])
-        
-        if end_x[i]-start_x[i] >2:
-            
-            shift = len(s)
-            prev_2d = 0
-            rotate = 0
-        else:
-            if "frac" in s:
-                shift = 13 +prev_2d
-            elif len(s)==0:
-                prev_2d -=2
-                continue
+    # break up shap vals
+    shap_dict = {
+        "xx_yy": [], # in 2D, out 2D
+        "xx_y":  [], # in 2D, out 1D
+        "x_yy": [],  # in 1D, out 2D
+        "x_y": [],   # in 1D, out 1D
+    } 
+    def get_size(var, norm_file):
+        if var in norm_file.keys():
+            l = len(norm_file[var]["mean"].shape)
+            if l == 1:
+                l = norm_file[var]["mean"].shape[0]
             else:
-                shift = 5 + prev_2d
-            prev_2d -=4
-            rotate = 90
+                l = 1
+        elif var in ["h2o", "cl", "q"]:
+            l=norm_file["extra_3d_ta"]["mean"].shape[0]
+        elif var in ["clt", "albvisdir", "albvisdif", "albnirdir", "albnirdif", "rlds_rld"]:
+            l = 1
+        else:
+            raise ValueError(f"I don't know the size of {var}")
+        return l
+    in_counter = 0
+    x_var  = []
+    xx_var = []
+    y_var  = []
+    yy_var = []
+    for in_idx, in_var in enumerate(variables["in_vars"]):
+        lx = get_size(in_var, norm_file)
+        if lx == 1:
+            x_var.append(label_translate(in_var))
+        else:
+            xx_var.append(label_translate(in_var))
+        out_counter = 0 
+        temp_x_y   = []
+        temp_xx_y  = []
+        temp_x_yy  = []
+        temp_xx_yy = []
+        for out_idx, out_var in enumerate(variables["out_vars"]):
+            ly = get_size(out_var, norm_file)
+            if ly==1 and in_idx==0:
+                y_var.append(label_translate(out_var))
+            elif ly>1 and in_idx==0:
+                yy_var.append(label_translate(out_var))
+            v = vals[in_counter:in_counter+lx, out_counter:out_counter+ly].squeeze()
             
-        plt.text(x = x-shift, y= -1-kwargs["yshift"]*(1 + rotate/(90*3)),s= s, rotation = rotate ) 
-    for i, y in enumerate(ycenters):
-        s = label_translate(variables["out_vars"][-i-1])
-        plt.text(x = kwargs["yxshift"], y= y-kwargs["yyshift"],s= s, rotation=kwargs["yrotate"] ) 
-     
-    plt.xticks(ticks=xticks-0.5, labels=xlabels)
-    plt.yticks(ticks=yticks-0.5, labels=ylabels)
+            if lx == 1 and ly == 1:
+                temp_x_y.append(v)  
+            elif lx == 1 and ly > 1:
+                temp_x_yy.append(v[::-1])
+            elif lx > 1 and ly > 1:
+                temp_xx_yy.append(v.T[::-1, ::-1])
+            elif lx > 1 and ly == 1:
+                temp_xx_y.append(v[::-1])
+            out_counter += ly
+        in_counter += lx
+        shap_dict["x_y"].append(np.vstack(temp_x_y)) if len(temp_x_y) else []
+        shap_dict["xx_y"].append(np.vstack(temp_xx_y)) if len(temp_xx_y) else []
+        shap_dict["x_yy"].append(np.vstack(temp_x_yy)) if len(temp_x_yy) else []
+        shap_dict["xx_yy"].append(np.vstack(temp_xx_yy)) if len(temp_xx_yy) else []
+        
+    for mode in ["xx_yy", "x_y", "xx_y", "x_yy", ]:
+        
+        arr = np.array(shap_dict[mode])
+        
+        vals=np.hstack(arr) if mode != "x_yy" else np.vstack(arr).T
+        plt.figure(figsize=fig_specs[mode]["figsize"])
+        #plt.title(mode)
+        plt.pcolor(vals, cmap="Reds",
+                    #marker="s", s=10,
+                    norm=mpl.colors.SymLogNorm(
+                        linthresh=fig_specs[mode]["vmin"], 
+                        linscale=1.,
+                        vmin=0, 
+                        vmax=fig_specs[mode]["vmax"],
+                        base=10)
+                   )
+        if "xx" in mode:
+            n_xx = len(xx_var)
+            ticks = np.concatenate([np.array([i_1,i_10,i_50])+(i*h) for i in range(n_xx)])
+            for i, x in enumerate(xx_var):
+                plt.text(x=i+47*i+10 ,y=fig_specs[mode]["yshift"] , s=x)
+            plt.xticks(ticks, labels=[1, 10, 50]*n_xx)
+            plt.grid()
 
-    plt.colorbar(label="Shapley values", extend="max", pad=0.01)
-    if "HR" in kwargs['mtype']:
-        plt.grid()
-    plt.show()
-    plt.close()
+            plt.vlines([i*h for i in range(n_xx)],-1, h+1, color="black", linewidths=1)
+            plt.xlim(0, n_xx*h)
+        else:
+            n_x=len(x_var)
+            plt.xticks(np.arange(0.5,len(x_var)), labels=x_var, rotation=90)
+            plt.xlim(0, n_x)
+        if "yy" in mode:
+            n_yy = len(yy_var)
+            ticks = np.concatenate([np.array([i_1,i_10,i_50])+(i*h) for i in range(n_yy)])
+            plt.yticks(ticks, labels=[1, 10, 50]*n_yy)
+            for i, y in enumerate(yy_var):
+                plt.text(x=fig_specs[mode]["xshift"] ,y=i+47*i+10 , s=y, rotation=90)
+            plt.hlines([i*h-0.5 for i in range(n_yy)],-1, h+1, color="black", linewidths=1)
+            plt.ylim(0, n_yy*h)
+        else:
+            n_y = len(y_var)
+            plt.yticks(np.arange(0.5,len(y_var)), labels=y_var)
+            plt.ylim(0, n_y)
+            
+        plt.colorbar(label="Shapley values", extend="max")
+        plt.tight_layout()
+        plt.show()
+        #plt.savefig(kwargs["save"])
+        plt.close()

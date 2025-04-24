@@ -7,12 +7,12 @@ from .preprocessing_layer import Preprocessing
 
    
 class Flux(L.LightningModule):
-    def __init__(self, model_type, in_nodes, nft, in_vars, n_out_nodes=2,  extra_shape = 0, n_nodes=256, n_layers=2, lr=1.e-4):
+    def __init__(self, model_type, in_nodes, norm_file, in_vars, n_out_nodes=2,  extra_shape = 0, n_nodes=256, n_layers=2, lr=1.e-4):
         super(Flux, self).__init__()
         self.extra_shape = extra_shape
         self.model_type = model_type
         self.lr = lr
-        self.prep = Preprocessing(nft, in_vars, mode="vertical")
+        self.prep = Preprocessing(norm_file, in_vars, mode="vertical")
         layer_list = [ nn.Linear(in_nodes, n_nodes), nn.Tanh()]
         for i in range(n_layers-1):
             layer_list.append(nn.Linear(n_nodes, n_nodes))

@@ -1,16 +1,22 @@
-model_type: "LW_FLUX"              # Choices: ["SW_HR", "LW_HR", "SW_FLUX", "LW_FLUX"]
-learning_rate: 1.0e-4
-folder: "fluxes_new"         # Folder to save the model
-dev: True                  # Use development mode, loads less data
-checkpoint: False          # Load checkpoint
-weight_decay: null
-batch_size: null
+model_type: "LW_FLUX_HR"              # Choices: ["SW_HR", "LW_HR", "SW_FLUX", "LW_FLUX"]
+baseline: "LW_HR"
+baseline_path: "results/energy_mse_mae_96/baseline_LW_HR/model.pth"
+n_flux_vars: 2
+learning_rate: 1.0e-3
+folder: "energy_flux_adamw_lr13"         # Folder to save the model
+dev: False                  # Use development mode, loads less data
+checkpoint: false          # Load checkpoint
+weight_decay: 1.e-4
+batch_size: 256
+hidden_size: 96
 seed: 3141
+nn: default
+nn_flux: "default"          # Choices: ["simple", "default"]
 x_mode: "vertical"       # Choices: ["vertical", "horizontal"]
 y_mode: "vertical"       # Choices: ["vertical", "horizontal"]
 pretrained: False          # Load pretrained model
 start_epoch: 0             # Start training from checkpoint
-train_epochs: 0            # Train for E epochs use 0 for maximum + early stopping
+train_epochs: -1            # Train for E epochs use 0 for maximum + early stopping
 eval_on: "test"            # Choices: ["train", "validation", "test"]
 exp_name: "exp"
 base: "path/to/data/"  # Base path to data
@@ -52,10 +58,11 @@ variables:
     - rho           # Air density
     - extra_3d_ta   # Air temperature
   out_vars: 
-    - rlds          # Downward longwave radiation at surface
+    - tend_ta_rlw   # Tendency of air temperature due to longwave radiation
+    - rlds_rld          # Downward longwave radiation at surface
     - rlut          # Upward longwave radiation at top of atmosphere
-  
-  extra_in: []  
+  extra_in: 
+    - qconv  
   diagnostics: 
     - extra_2d_albedo  # Surface albedo
     - cosmu0           # Cosine of solar zenith angle
@@ -63,4 +70,5 @@ variables:
     - extra_2d_clivi   # Vertically integrated cloud ice
     - extra_2d_cllvi   # Vertically integrated cloud liquid
     - extra_3d_pfull   # Full pressure levels
-    - clt              # Total cloud fraction
+    - clt              # Total cloud fraction    
+    - qconv       

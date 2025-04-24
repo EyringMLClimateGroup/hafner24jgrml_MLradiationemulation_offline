@@ -1,20 +1,27 @@
 model_type: "LW_HR"              # Choices: ["SW_HR", "LW_HR", "SW_FLUX", "LW_FLUX"]
-learning_rate: 1.0e-3
-folder: "preprocessing_toa"         # Folder to save the model
-dev: True                  # Use development mode, loads less data
+learning_rate: 5.0e-3
+folder: "energy_mse_mae_96"         # Folder to save the model
+dev: False                  # Use development mode, loads less data
 checkpoint: False          # Load checkpoint
-weight_decay: null
-batch_size: null
+weight_decay: 0
+hidden_size: 96
+batch_size: 256
 seed: 3141
+nn: "default"
 x_mode: "vertical"         # Choices: ["vertical", "horizontal"] currently only vertical is supported
-y_mode: "horizontal"       # Choices: ["vertical", "horizontal"]
+y_mode: "vertical"       # Choices: ["vertical", "horizontal"]
 pretrained: False          # Load pretrained model
 start_epoch: 0             # Start training from checkpoint
-train_epochs: 0            # Train for E epochs use 0 for maximum + early stopping
+train_epochs: -1            # Train for E epochs use 0 for maximum + early stopping
 eval_on: "test"            # Choices: ["train", "validation", "test"]
 exp_name: "exp"
-base: "/path/to/data/"
+base: "path/to/data/"  # Base path to data
+data: "data/"
+train_path: "data/train_LW.zarr"
+val_path: "data/val_LW.zarr"
+test_path: "data/test_LW.zarr"
 norm_file_path: "preprocessing/norm_file_extra.pkl"
+vgrid_path: "path/to/vgrid.nc"
 # Placeholder, will be set dynamically in Python
 save_folder: ""
 result_folder: ""
@@ -52,9 +59,10 @@ variables:
     - tend_ta_rlw   # Temperature tendency due to longwave radiation
   extra_in:
     - q             # Total water content hus + cli + clw
+    - "qconv"             # Conversion factor for W/m^2 to K/day
+    - "rlds_rld"              # Surface downwelling longwave radiation
+    - "rlut"              # Top of atmosphere upwelling longwave radiation
   diagnostics:
-    - extra_2d_albedo  # Surface albedo
-    - cosmu0           # Cosine of solar zenith angle
     - extra_2d_prw     # Precipitable water
     - extra_2d_clivi   # Vertically integrated cloud ice
     - extra_2d_cllvi   # Vertically integrated cloud liquid

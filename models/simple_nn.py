@@ -6,33 +6,43 @@ import lightning as L
 from .preprocessing_layer import Preprocessing
 import numpy as np
 
-class BiLSTM(L.LightningModule):
-    def __init__(self, model_type, output_features, norm_file, in_vars, extra_shape=0, hidden_size=96, n_layer=1, lr=1.e-3, weight_decay=0):
-        super(BiLSTM, self).__init__()
+class SimpleNN(L.LightningModule):
+    def __init__(self, model_type, input_features, output_features, norm_file, in_vars, extra_shape=0, hidden_size=128, n_layer=1, lr=1.e-3, weight_decay=0):
+        super(SimpleNN, self).__init__()
         self.model_type = model_type
         self.extra_shape = extra_shape
         self.lr = lr
         self.weight_decay = weight_decay
-        input_features = len(in_vars)
         self.lstm_output = torch.Tensor()
-        self.prep = Preprocessing(norm_file, in_vars, mode="horizontal", pad_len=47, var_len=47)
-        self.lstm = nn.LSTM(input_features, hidden_size, bidirectional=True, batch_first=True, num_layers = n_layer)
-
+        self.prep = Preprocessing(norm_file, in_vars, mode="vertical", pad_len=47, var_len=47)
+        
         if "SW" in model_type:
-            self.linear = nn.Sequential(nn.Linear(hidden_size*2, output_features), nn.ReLU())
+            self.linear = nn.Sequential(
+                nn.Linear(input_features, hidden_size),
+                nn.Tanh(), 
+                nn.Linear(hidden_size, hidden_size), 
+                nn.Tanh())
+            self.output = nn.Sequential(
+                nn.Linear(hidden_size, output_features), 
+                nn.ReLU())
         else:
-            self.linear = nn.Linear(hidden_size*2, output_features)
+            self.linear = nn.Sequential(
+                nn.Linear(input_features, hidden_size),
+                nn.Tanh(), 
+                nn.Linear(hidden_size, hidden_size), 
+                nn.Tanh())
+            self.output = nn.Sequential(
+                nn.Linear(hidden_size, output_features))
 
     def forward(self, full_input):
-        #full_input = torch.tensor(full_input)
         if self.extra_shape > 0:
             x = full_input[:,  :-self.extra_shape]
         else:
             x = full_input
         x = self.prep(x)
-        x, _ = self.lstm(x)
+        x = self.linear(x)
         self.lstm_output = x
-        output = self.linear(x)
+        output = self.output(x)
         return output.squeeze()
 
     def predict(self, x):
@@ -109,12 +119,11 @@ class BiLSTM(L.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay = self.weight_decay)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=20, threshold=0.0001, threshold_mode='rel')
-        return {"optimizer":optimizer, "lr_scheduler":{"scheduler": scheduler, "monitor": "val_mse_mae_loss"}}
-
-
-class BiLSTM_with_Flux(L.LightningModule):
+        return {"optimizer":optimizer, "lr_scheduler":{"scheduler": scheduler, "monitor": "val_mse_loss"}}
+    
+class SimpleNN_with_Flux(L.LightningModule):
     def __init__(self, hr_model, model_type, output_features, extra_shape=0, hidden_size=96, lr=1.e-3, weight_decay=0.0, shap=False):
-        super(BiLSTM_with_Flux, self).__init__()
+        super(SimpleNN_with_Flux, self).__init__()
         self.model_type = model_type
         self.extra_shape = extra_shape
         self.output_len = output_features
@@ -127,7 +136,7 @@ class BiLSTM_with_Flux(L.LightningModule):
             self.n_e = 4 # for the partial albedos
         else:
             self.n_e = 0  
-        self.linear = nn.Sequential(nn.Linear(hidden_size*2, 1), nn.Tanh())
+        self.linear = nn.Sequential(nn.Linear(hidden_size, 47), nn.Tanh())
         if "SW" in self.model_type:
             out_act = nn.Hardtanh(min_val=0., max_val=1.)
         else:
