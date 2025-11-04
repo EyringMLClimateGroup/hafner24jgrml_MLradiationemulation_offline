@@ -1,5 +1,8 @@
 # Interpretable Machine Learning-based Radiation Emulation for ICON
 
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15276978.svg)](https://doi.org/10.5281/zenodo.15276978)
+
 This repository contains the code for the interpretable ML-based radiation emulator for ICON. The corresponding paper is published:
 
 > Hafner, K., Iglesias-Suarez, F., Shamekh, S., Gentine, P., Giorgetta, M. A., Pincus, R., & Eyring, V. (2025). Interpretable machine learning-based radiation emulation for ICON. *Journal of Geophysical Research: Machine Learning and Computation*, 2, e2024JH000501. [https://doi.org/10.1029/2024JH000501](https://doi.org/10.1029/2024JH000501)
