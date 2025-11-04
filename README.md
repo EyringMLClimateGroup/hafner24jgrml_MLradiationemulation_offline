@@ -1,6 +1,8 @@
 # Interpretable Machine Learning-based Radiation Emulation for ICON
 
-This repository contains the code for the interpretable ML-based radiation emulator for ICON. The corresponding paper is currently under review in the Journal of Geophysical Research - Machine Learning and Computation 
+This repository contains the code for the interpretable ML-based radiation emulator for ICON. The corresponding paper is published:
+
+> Hafner, K., Iglesias-Suarez, F., Shamekh, S., Gentine, P., Giorgetta, M. A., Pincus, R., & Eyring, V. (2025). Interpretable machine learning-based radiation emulation for ICON. *Journal of Geophysical Research: Machine Learning and Computation*, 2, e2024JH000501. [https://doi.org/10.1029/2024JH000501](https://doi.org/10.1029/2024JH000501)
 
 
 If you want to use this repository, start by executing
